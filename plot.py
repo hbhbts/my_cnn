@@ -10,10 +10,12 @@ C = 13
 K = 3
 S = 1
 
-DSP = 2800 * 0.8
-LUT = 303600 * 1.0
-FF = 607200 * 1.0
-BRAM = 2060*1024 * 0.8
+ratio = 0.8
+
+DSP = 2800 * ratio
+LUT = 303600 * ratio
+FF = 607200 * ratio
+BRAM = 2060*1024 * ratio
 
 Tn = 4.0
 Tm = 128.0
@@ -30,20 +32,11 @@ for Tr in np.arange(1.0, R+1, 1):
                             if(Tn*(S*(Tr-1)+K)*(S*(Tc-1)+K)+Tm*Tn*K*K+Tm*Tr*Tc < BRAM):
                                 value.append([Tr, Tc, Tm, Tn])
 
-#z = [tm*tn for tr, tc, tm, tn in value]
-#z2 = range(0, len(value), 1)
-
-#print value
-
 
 y = [((M*R*C*N*K*K*2*0.1)/ \
         (math.ceil(M/tm)*math.ceil(N/tn)*(R/tr)*(C/tc)*(3*math.log(tn,2)-1+tr*tc*K*K)), \
         tr, tc, tm, tn)
         for tr, tc, tm, tn in value]
-
-#y2 = [10*(M*R*C*N*K*K*2)/ \
-#         (math.floor(M/tm)*math.floor(N/tn)*(R/tr)*(C/tc)*(0+tr*tc*K*K)) \
-#        for tr, tc, tm, tn in value]
 
 
 x = [((R*C*M*N*K*K*2/4)/ \
@@ -53,12 +46,13 @@ x = [((R*C*M*N*K*K*2/4)/ \
 xx = [x1[0] for x1 in x]
 yy = [y1[0] for y1 in y]
 
+
 for i in range(0, len(x)):
     if(x[i][0] > 55 and y[i][0] > 85):
-        print("CTC=%f\tCP=%f\tTr=%f\tTc=%f\tTm=%f\tTn=%f\t\tBandwith=%f" % (x[i][0], y[i][0], y[i][1], y[i][2], y[i][3], y[i][4], y[i][0]/x[i][0]))
+        print("CTC=%f\tCP=%f\tTr=%f\tTc=%f\tTm=%f\tTn=%f\t\tBW=%f" % (x[i][0], y[i][0], y[i][1], y[i][2], y[i][3], y[i][4], y[i][0]/x[i][0]))
 
 plt.plot(xx, yy, '.')
-#plt.plot(z2, z, '.')
+
 plt.show()
 
 
