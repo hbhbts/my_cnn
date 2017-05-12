@@ -55,7 +55,7 @@ yy = [y1[0] for y1 in y]
 
 for i in range(0, len(x)):
     if(x[i][0] > 55 and y[i][0] > 85):
-        print x[i][0], y[i]
+        print("CTC=%f\tCP=%f\tTr=%f\tTc=%f\tTm=%f\tTn=%f\t\tBandwith=%f" % (x[i][0], y[i][0], y[i][1], y[i][2], y[i][3], y[i][4], y[i][0]/x[i][0]))
 
 plt.plot(xx, yy, '.')
 #plt.plot(z2, z, '.')
