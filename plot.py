@@ -17,8 +17,6 @@ LUT = 303600 * ratio
 FF = 607200 * ratio
 BRAM = 2060*1024 * ratio
 
-Tn = 4.0
-Tm = 128.0
 
 value = []
 
