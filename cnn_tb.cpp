@@ -1,9 +1,10 @@
 #include "ap_int.h"
 #include <iostream>
+#include "cnn_top.hpp"
 
 using namespace std;
 
-void cnn_top(float*, int, int, int, int, int, int, int, int, int);
+void cnn_top(float*, layer_cfg_t);
 
 int main(int argc, char** argv) {
     int offset_weight;
@@ -30,7 +31,7 @@ int main(int argc, char** argv) {
     cout << "weigth size:" << weight_size << "\tinfm size:" << infm_size << "\toutfm_size:"
         << outfm_size << "\ttatoal size:" << weight_size + infm_size + outfm_size << endl;
 
-    cnn_top(dram, offset_weight, offset_infm, offset_outfm, cfg_row, cfg_col, cfg_m , cfg_n, cfg_k, cfg_s);
+    cnn_top(dram, layer_cfg_t(offset_weight, offset_infm, offset_outfm, cfg_row, cfg_col, cfg_m , cfg_n, cfg_k, cfg_s));
 
     return 0;
 }

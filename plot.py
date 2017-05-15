@@ -32,7 +32,7 @@ for Tr in np.arange(1.0, R+1, 1):
 
 
 y = [((M*R*C*N*K*K*2*F/1000)/ \
-        (math.ceil(M/tm)*math.ceil(N/tn)*(R/tr)*(C/tc)*(4*(math.log(tn,2)+1)+tr*tc*K*K)), \
+        (math.ceil(M/tm)*math.ceil(N/tn)*(R/tr)*(C/tc)*(10*math.ceil(math.log(tn,2))+tr*tc*K*K)), \
         tr, tc, tm, tn)
         for tr, tc, tm, tn in value]
 
