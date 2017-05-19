@@ -10,41 +10,30 @@ class network:
         self.size = len(sizes)
         self.enta = enta
 
-    def backpropagation(self, x, y):
-        aa = [x];
+    def backpropagation(self, xin, yin):
+        aa = [xin];
         za = [];
         delta_ba = [np.zeros(x.shape) for x in self.biases]
         delta_wa = [np.zeros(x.shape) for x in self.weights]
-        for x, y in zip(self.biases, self.weights):
-            print x.shape
-            print y.shape
 
         #feedforward
         for i in range(1, self.size):
-            print 'enter feedforward'
-            print self.weights[i-1].shape
-            print aa[i-1].T.shape
             z = np.dot(self.weights[i-1], aa[i-1].T) + self.biases[i-1]
             za.append(z)
             a = self.sigma(z)
-            aa.append(a)
-            print z.shape
-            print 'print z.shape'
+            aa.append(a.T)
 
         #backpropagation
-        delta_ba[-1] = self.cost_prime(aa[-1], y) * self.sigma_prime(za[-1])
-        delta_wa[-1] = np.dot(delta_ba[-1], aa[-2].T)
+        delta_ba[-1] = self.cost_prime(aa[-1].T, yin) * self.sigma_prime(za[-1])
+        delta_wa[-1] = np.dot(delta_ba[-1], aa[-2])
 
         for j in range(self.size-2-1, -1, -1):
             delta_b = np.dot(self.weights[j+1].T, delta_ba[j+1]) * self.sigma_prime(za[j])
-            delta_w = np.dot(delta_b, aa[j-1].T)
+            delta_w = np.dot(delta_b, aa[j])
             delta_ba[j] = delta_b
             delta_wa[j] = delta_w
 
         #update bias and weight
-        for x, y in zip(delta_ba, delta_wa):
-            print x.shape
-            print y.shape
         self.biases = [b - self.enta*nb for b, nb in zip(self.biases, delta_ba)]
         self.weights =[w - self.enta*nw for w, nw in zip(self.weights, delta_wa)]
 
@@ -57,14 +46,16 @@ class network:
     def sigma_prime(self, z):
         return (self.sigma(z)-1)*self.sigma(z)
 
-    def test(self, x, y):
-        a = [x];
+    def test(self, xin, yin):
+        a = [xin];
         for i in range(1, self.size):
             z = np.dot(self.weights[i-1], a[i-1].T) + self.biases[i-1]
-            a.append(self.sigma(z))
-        b = y - a[-1]
-        loss = 0.5 * np.dot(b, b.T)
-        print '# loss : %f' % (loss)
+            s = self.sigma(z)
+            a.append(s.T)
+        b = yin - a[-1].T
+        print a[-1].T
+        loss = 0.5 * np.dot(b.T, b)
+        print loss
 
 
 net0 = network([784, 20, 10], 0.1)
@@ -76,14 +67,19 @@ for x, y in zip(train_data[0], train_data[1]):
     ny = np.zeros((10, 1))
     ny[y] = 1.0
     nx = np.reshape(x, (1, 784))
-#    print x, ny
-
     net0.backpropagation(nx, ny)
 
 print '# backpropagation complete'
 
+i = 0
 for x, y in zip(validate_data[0], validate_data[1]):
-    net0.test(x, y)
+    i += 1
+    if i > 10:
+        exit()
+    ny = np.zeros((10, 1))
+    ny[y] = 1.0
+    nx = np.reshape(x, (1, 784))
+    net0.test(nx, ny)
 
 print '# test complete'
 
