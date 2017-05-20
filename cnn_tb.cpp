@@ -4,7 +4,7 @@
 
 using namespace std;
 
-void cnn_top(float*, layer_cfg_t);
+void cnn_top(float*, float*, float*, layer_cfg_t);
 
 int main(int argc, char** argv) {
     int offset_weight;
@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     int outfm_size;
 
     weight_size = cfg_m*cfg_n*cfg_k*cfg_k;
-    infm_size = cfg_n*(cfg_row*cfg_s)*(cfg_col*cfg_s);
+    infm_size = cfg_n*(cfg_row*cfg_s+cfg_k-1)*(cfg_col*cfg_s+cfg_k-1);
     outfm_size = cfg_m*cfg_row*cfg_col;
     dram = new float[weight_size + infm_size + outfm_size];
     offset_weight = 0;
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
     cout << "weigth size:" << weight_size << "\tinfm size:" << infm_size << "\toutfm_size:"
         << outfm_size << "\ttatoal size:" << weight_size + infm_size + outfm_size << endl;
 
-    cnn_top(dram, layer_cfg_t(offset_weight, offset_infm, offset_outfm, cfg_row, cfg_col, cfg_m , cfg_n, cfg_k, cfg_s));
+    cnn_top(dram, dram, dram, layer_cfg_t(offset_weight, offset_infm, offset_outfm, cfg_row, cfg_col, cfg_m , cfg_n, cfg_k, cfg_s));
 
     return 0;
 }
