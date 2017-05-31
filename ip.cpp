@@ -1,48 +1,16 @@
 #include <iostream>
+#include "ip.hpp"
+
+using namespace std;
 
 
-#define TM 64
-#define TN 7
-#define TR 13
-#define TC 13
-#define K_MAX 11
-#define S_MAX 4
-#define TR_IN (S_MAX*(TR-1)+K_MAX)
-#define TC_IN (S_MAX*(TC-1)+K_MAX)
-#define MIN(x, y) (x > y ? x : y)
-#define TR_POOL 6
-#define TC_POOL 6
-
-
-typedef int ParameterType;
-typedef float DataType;
-typedef struct {
-    ParameterType weightOffset;
-    ParameterType inFmOffset;
-    ParameterType outFmOffset;
-    ParameterType isRelu;
-    ParameterType isPoolingMax;
-    ParameterType cfgRow;
-    ParameterType cfgCol;
-    ParameterType cfgM;
-    ParameterType cfgN;
-    ParameterType cfgK;
-    ParameterType cfgS;
-    ParameterType cfgPoolK;
-    ParameterType cfgPoolS;
-} LayerCfgType;
-
-
-
-
-
-DataType biasBuffer[TM];
-DataType weightBuffer[TM][TN][K_MAX*K_MAX];
-DataType inputFmBuffer[TN][TR_IN][TC_IN];
-DataType immRegArray[TM];
-DataType immBuffer[TM][TR][TN];
-DataType immPoolArray[TM];
-DataType immPoolBuffer[TM][TR_POOL][TC_POOL];
+static DataType biasBuffer[TM];
+static DataType weightBuffer[TM][TN][K_MAX*K_MAX];
+static DataType inputFmBuffer[TN][TR_IN][TC_IN];
+static DataType immRegArray[TM];
+static DataType immBuffer[TM][TR][TN];
+static DataType immPoolArray[TM];
+static DataType immPoolBuffer[TM][TR_POOL][TC_POOL];
 
 void PE(ParameterType isRelu, ParameterType cfgK, ParameterType kernelPos,
             ParameterType trrInPos, ParameterType tccInPos, 
@@ -137,20 +105,30 @@ void TileWriteBack(DataType *dram, ParameterType outFmOffset, ParameterType cfgR
     }
 }
 
-void InputTileLoad(DataType *dram, ParameterType inFmOffset, ParameterType cfgN,
+//load input feature maps from (row*stride-boundary, col*stride-boundary)
+//to ((row+Tr-1)*stride+boundary, (col+Tc-1)*stride+boundary)
+//if the input feature maps points exceed the actual size as the pad operation,
+//the zero should be filled into the buffer.
+void InputTileLoad(DataType *dram, ParameterType isPadding, ParameterType inFmOffset, ParameterType cfgN,
                     ParameterType cfgK, ParameterType cfgS, ParameterType cfgRow, 
                     ParameterType cfgCol, ParameterType row, ParameterType col,
                     ParameterType ci) {
 #pragma HLS inline
-    ParameterType trrInMax = (cfgRow-1)*cfgS + cfgK;
-    ParameterType tccInMax = (cfgCol-1)*cfgS + cfgK;
+    int kernelBoundary = (cfgK-1)/2;
+    ParameterType trrInMax = (cfgRow-1)*cfgS + (isPadding ? 1: cfgK);
+    ParameterType tccInMax = (cfgCol-1)*cfgS + (isPadding ? 1: cfgK);
     for(int tii = 0; tii < TN; ++tii) {
-        for(int trr = 0; trr < trrInMax; ++trr) {
+        for(int trr = 0; trr < TR_IN; ++trr) {
             for(int tcc = 0; tcc < TC_IN; ++tcc) {
 #pragma HLS pipeline II=1
-                if(tcc < tccInMax) {
+                cout << "InputTileLoad:" << tii << trr << tcc << endl;
+                int yPosition = trr+row*cfgS + (isPadding ? (-kernelBoundary) : 0);
+                int xPosition = tcc+col*cfgS + (isPadding ? (-kernelBoundary) : 0);
+                if(yPosition < 0 || xPosition < 0 || yPosition > trrInMax || xPosition > tccInMax)
+                    inputFmBuffer[tii][trr][tcc] = 0;
+                else {
                     ParameterType immOffset = inFmOffset + (ci+tii)*trrInMax*tccInMax
-                                        + (trr+row)*trrInMax + tcc+col;
+                                        + yPosition*tccInMax + xPosition;
                     DataType readReg = *(dram + immOffset);
                     inputFmBuffer[tii][trr][tcc] = readReg;
                 }
@@ -179,14 +157,15 @@ void WeightTileLoad(DataType *dram, ParameterType weightOffset, ParameterType cf
 }
 
 void LayerTop(DataType *dram, LayerCfgType cfgSet) {
-ParameterType weightOffset, inFmOffset, outFmOffset, cfgRow, cfgCol, cfgM,
-                cfgN, cfgK, cfgS;
-ParameterType isRelu, isPoolingMax;
+ParameterType weightOffset, inFmOffset, outFmOffset;
+ParameterType cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS;
+ParameterType isRelu, isPoolingMax, isPadding;
 ParameterType cfgPoolS, cfgPoolK;
 
     weightOffset = cfgSet.weightOffset;
     inFmOffset = cfgSet.inFmOffset;
     outFmOffset = cfgSet.outFmOffset;
+    isPadding = cfgSet.isPadding;
     isRelu = cfgSet.isRelu;
     isPoolingMax = cfgSet.isPoolingMax;
     cfgRow = cfgSet.cfgRow;
@@ -203,8 +182,9 @@ ParameterType cfgPoolS, cfgPoolK;
         for(int col = 0; col < cfgCol; col += TC) {
             for(int co = 0; co < cfgM; co += TM) {
                 for(int ci = 0; ci < cfgN; ci += TN) {
+                    cout << row << col << co << ci << endl;
                     WeightTileLoad(dram, weightOffset, cfgK, cfgN, cfgM, co, ci);
-                    InputTileLoad(dram, inFmOffset, cfgN, cfgK, cfgS, cfgRow, cfgCol,
+                    InputTileLoad(dram, isPadding, inFmOffset, cfgN, cfgK, cfgS, cfgRow, cfgCol,
                                     row, col, ci);
                     TileConv(isRelu, cfgK, cfgS);
                     TilePooling(isPoolingMax, cfgPoolK, cfgPoolS);
