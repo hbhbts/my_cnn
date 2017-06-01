@@ -121,7 +121,6 @@ void InputTileLoad(DataType *dram, ParameterType isPadding, ParameterType inFmOf
         for(int trr = 0; trr < TR_IN; ++trr) {
             for(int tcc = 0; tcc < TC_IN; ++tcc) {
 #pragma HLS pipeline II=1
-                cout << "InputTileLoad:" << tii << trr << tcc << endl;
                 int yPosition = trr+row*cfgS + (isPadding ? (-kernelBoundary) : 0);
                 int xPosition = tcc+col*cfgS + (isPadding ? (-kernelBoundary) : 0);
                 if(yPosition < 0 || xPosition < 0 || yPosition > trrInMax || xPosition > tccInMax)
@@ -144,7 +143,7 @@ void WeightTileLoad(DataType *dram, ParameterType weightOffset, ParameterType cf
     for(int too = 0; too < MIN(TM, cfgM-co); ++too) {
         for(int tii = 0; tii < MIN(TN, cfgN-ci); ++tii) {
             for(int i = 0; i < K_MAX*K_MAX; ++i) {
-#pragma HLS pipeline II=1                
+#pragma HLS pipeline II=1        
                 if(i < cfgK*cfgK) {
                     ParameterType immOffset = weightOffset + (too+co)*cfgN*cfgK*cfgK +
                                             (tii+ci)*cfgK*cfgK + i;
@@ -156,13 +155,21 @@ void WeightTileLoad(DataType *dram, ParameterType weightOffset, ParameterType cf
     }
 }
 
+void BiasTileLoad(DataType *dram, ParameterType biasOffset, ParameterType co) {
+#pragma HLS inline
+    for(int too = 0; too < TM; ++too) {
+        biasBuffer[too] = *(dram + biasOffset + co + too);
+    }
+}
+
 void LayerTop(DataType *dram, LayerCfgType cfgSet) {
-ParameterType weightOffset, inFmOffset, outFmOffset;
+ParameterType weightOffset, biasOffset, inFmOffset, outFmOffset;
 ParameterType cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS;
 ParameterType isRelu, isPoolingMax, isPadding;
 ParameterType cfgPoolS, cfgPoolK;
 
     weightOffset = cfgSet.weightOffset;
+    biasOffset = cfgSet.biasOffset;
     inFmOffset = cfgSet.inFmOffset;
     outFmOffset = cfgSet.outFmOffset;
     isPadding = cfgSet.isPadding;
@@ -182,8 +189,8 @@ ParameterType cfgPoolS, cfgPoolK;
         for(int col = 0; col < cfgCol; col += TC) {
             for(int co = 0; co < cfgM; co += TM) {
                 for(int ci = 0; ci < cfgN; ci += TN) {
-                    cout << row << col << co << ci << endl;
                     WeightTileLoad(dram, weightOffset, cfgK, cfgN, cfgM, co, ci);
+                    BiasTileLoad(dram, biasOffset, co);
                     InputTileLoad(dram, isPadding, inFmOffset, cfgN, cfgK, cfgS, cfgRow, cfgCol,
                                     row, col, ci);
                     TileConv(isRelu, cfgK, cfgS);
