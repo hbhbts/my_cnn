@@ -57,10 +57,11 @@ int main(int argc, char** argv) {
         caffe::LayerParameter layer = net.layer(1);
         cout << "\tLayer Type: " << layer.type() << endl;
         caffe::ConvolutionParameter conv;
-        caffe::BlobProto blobs;
+        caffe::BlobProto blobs, blobs2;
         caffe::BlobShape shape;
         conv = layer.convolution_param();
         blobs = layer.blobs(0);
+        blobs2 = layer.blobs(1);
         shape = blobs.shape();
 
         isPadding = 0;
@@ -101,41 +102,40 @@ int main(int argc, char** argv) {
         fd = fopen("img.bin", "rb");
         if(fd == NULL) cout << "img.bin file not found." << endl;
         int imgLen = fread(dram+inFmOffset, sizeof(float), inputFmSize, fd);
-        for(int i = 0; i < imgLen; ++i)
-            cout << *(dram+inFmOffset+i) << '\t';
-        cout << endl;
         fclose(fd);
-        cout << "read out " << imgLen << endl;
+
         //load weights
         cout << "weights num: " << blobs.data_size() << endl;
         for(int i = 0; i < weightSize; ++i)
             *(dram+weightOffset+i) = blobs.data(i);
         //load biases
         cout << "bias num: " << blobs.diff_size() << endl;
-        //for(int i = 0; i < biasSize; ++i) 
-            //*(dram+biasOffset) = 
+        for(int i = 0; i < biasSize; ++i) 
+            *(dram+biasOffset+i) = blobs2.data(i);
 
 
         LayerTop(dram, LayerCfgType(weightOffset, biasOffset, inFmOffset, outFmOffset,
-                    isPadding, isRelu, isPoolingMax, 
-                    cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS, cfgPoolK, cfgPoolS));
+                    0, 0, 0, 
+                    24, 24, 20, 1, 5, 1, 2, 2));
+
+
 
         cout << "dram: " << endl;
         cout << "\tweights:" << endl;
-        for(int i = 0; i < 10; ++i) 
+        for(int i = 0; i < 0; ++i) 
             cout << *(dram+weightOffset+i) << endl;
 
         cout << "\tbiases:" << endl;
-        for(int i = 0; i < 10; ++i) 
+        for(int i = 0; i < 0; ++i) 
             cout << *(dram+biasOffset+i) << endl;
 
         cout << "\tinput:" << endl;
-        for(int i = 0; i < 10; ++i) 
-            cout << *(dram+inFmOffset+i) << endl;
+        for(int i = 0; i < 0; ++i) 
+            cout << "IMG:" << (i+1) << "\t" << *(dram+inFmOffset+i) << endl;
             
         cout << "\toutput:" << endl;
-        for(int i = 0; i < 10; ++i) 
-            cout << *(dram+outFmOffset+i) << endl;
+        for(int i = 0; i < outputFmSize; ++i) 
+            cout << (i+1) << "\t\t" << *(dram+outFmOffset+i) << endl;
 
 
         delete dram;

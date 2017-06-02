@@ -50,12 +50,11 @@ void PE(ParameterType isRelu, ParameterType cfgK, ParameterType kernelPos,
 
 void TileConv(ParameterType isRelu, ParameterType cfgK, ParameterType cfgS);
 
-void TilePooling(ParameterType isPoolingMax, 
-                    ParameterType poolK, ParameterType poolS);
+void TilePooling(ParameterType poolK, ParameterType poolS);
 
-void TileWriteBack(DataType *dram, ParameterType outFmOffset, ParameterType cfgRow,
-        ParameterType cfgCol, ParameterType cfgM, ParameterType row, ParameterType col,
-        ParameterType co);
+void TileWriteBack(DataType *dram, ParameterType outFmOffset, ParameterType isPoolingMax,
+        ParameterType cfgRow, ParameterType cfgCol, ParameterType cfgM, ParameterType row, 
+        ParameterType col, ParameterType co, ParameterType tileTR, ParameterType tileTC);
 
 void InputTileLoad(DataType *dram, ParameterType isPadding, ParameterType inFmOffset, ParameterType cfgN,
                     ParameterType cfgK, ParameterType cfgS, ParameterType cfgRow, 
@@ -66,7 +65,7 @@ void WeightTileLoad(DataType *dram, ParameterType weightOffset, ParameterType cf
                     ParameterType cfgN, ParameterType cfgM, ParameterType co, 
                     ParameterType ci);
 
-void BiasTileLoad(DataType *dram, ParameterType biasOffset, ParameterType co);
+void BiasTileLoad(DataType *dram, ParameterType biasOffset, ParameterType cfgM, ParameterType co);
 
 void LayerTop(DataType *dram, LayerCfgType cfgSet);
 
