@@ -3,7 +3,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "ip.hpp"
+#include "LayerTop.hpp"
 #include "caffe.pb.h"
 
 #include <fcntl.h>
