@@ -4,7 +4,7 @@
 using namespace std;
 
 
-static DataType biasBuffer[TM];
+static DataType biasBuffer[BIAS_NUM];
 static DataType weightBuffer[TM][TN][K_MAX*K_MAX];
 static DataType inputFmBuffer[TN][TR_IN][TC_IN];
 static DataType immRegArray[TM];
@@ -12,9 +12,9 @@ static DataType immBuffer[TM][TR][TC];
 static DataType immPoolArray[TM];
 static DataType immPoolBuffer[TM][TR_POOL][TC_POOL];
 
-void PE(ParameterType isRelu, ParameterType cfgK, ParameterType kernelPos,
+void PE(ParameterType isRelu, ParameterType isFullConnect, ParameterType cfgN, ParameterType cfgK, ParameterType kernelPos,
             ParameterType trrInPos, ParameterType tccInPos, 
-            ParameterType trrOutPos, ParameterType tccOutPos) {
+            ParameterType trrOutPos, ParameterType tccOutPos, ParameterType ci) {
 #pragma HLS inline
 
     for(int too = 0; too < TM; ++too) {
@@ -24,6 +24,9 @@ void PE(ParameterType isRelu, ParameterType cfgK, ParameterType kernelPos,
 #pragma HLS unroll
             immReg += weightBuffer[too][tii][kernelPos] *
                         inputFmBuffer[tii][trrInPos][tccInPos];
+            //if(too == 1 && trrOutPos == 0 && tccOutPos == 0)
+            //    cout << "PEIN: " << weightBuffer[too][tii][kernelPos] << "\t" << inputFmBuffer[tii][trrInPos][tccInPos] << "\t" << endl;
+            
 
         }
         immRegArray[too] = immReg;
@@ -31,20 +34,23 @@ void PE(ParameterType isRelu, ParameterType cfgK, ParameterType kernelPos,
 
     for(int too = 0; too < TM; ++too) {
 #pragma HLS unroll
+        int biasBufferIndex = isFullConnect ? tccOutPos : too;
         DataType resultAdd = immBuffer[too][trrOutPos][tccOutPos] + immRegArray[too];
-        if(kernelPos == 0) 
-            immBuffer[too][trrOutPos][tccOutPos] = biasBuffer[too] + immRegArray[too];
-        else if(kernelPos == cfgK*cfgK-1 && isRelu == 1)
+        if(ci == 0 && kernelPos == 0) 
+            immBuffer[too][trrOutPos][tccOutPos] = biasBuffer[biasBufferIndex] + immRegArray[too];
+        else if(ci+TN >= cfgN && kernelPos == cfgK*cfgK-1 && isRelu == 1)
             immBuffer[too][trrOutPos][tccOutPos] = resultAdd > 0 ? resultAdd : 0;
         else
             immBuffer[too][trrOutPos][tccOutPos] = resultAdd;
+        //if(too == 1 && trrOutPos == 0 && tccOutPos == 0)
+        //    cout << "PE: " << trrOutPos << "\t" << tccOutPos << "\t" << immBuffer[too][trrOutPos][tccOutPos] << "\t" << biasBuffer[biasBufferIndex] << endl;
 
     }
 
 
 }
 
-void TileConv(ParameterType isRelu, ParameterType cfgK, ParameterType cfgS) {
+void TileConv(ParameterType isRelu, ParameterType isFullConnect, ParameterType cfgN, ParameterType cfgK, ParameterType cfgS, ParameterType ci) {
 #pragma HLS inline
     for(int i = 0; i < cfgK; ++i) {
         for(int j = 0; j < cfgK; ++j) {
@@ -53,7 +59,8 @@ void TileConv(ParameterType isRelu, ParameterType cfgK, ParameterType cfgS) {
                 ParameterType trrInPos = trr * cfgS + i;
                 for(int tcc = 0; tcc < TC; ++tcc) {
                     ParameterType tccInPos = tcc * cfgS + j;
-                    PE(isRelu, cfgK, kernelPos, trrInPos, tccInPos, trr, tcc);
+                    PE(isRelu, isFullConnect, cfgN, cfgK, kernelPos, trrInPos, tccInPos, trr, tcc, ci);
+
                 }
             }
         }
@@ -77,12 +84,16 @@ void TilePooling(ParameterType poolK, ParameterType poolS) {
                                                 > immPoolArray[too] ?
                                                 immBuffer[too][trr*poolS+i][tcc*poolS+j]
                                                 : immPoolArray[too];
+                        //if(too == 0)
+                        //    cout << "LOOP: " << immBuffer[too][trr*poolS+i][tcc*poolS+j] << endl;
                     }
                 }
             }
             for(int too = 0; too < TM; ++too) {
 #pragma HLS unroll
                 immPoolBuffer[too][trr][tcc] = immPoolArray[too];
+                //if(too == 0)
+                //    cout << "POOL: " << too << "\t" << trr << "\t" << tcc << "\t" << immPoolArray[too] << endl;
             }
         }
     }
@@ -105,7 +116,8 @@ void TileWriteBack(DataType *dram, ParameterType outFmOffset, ParameterType isPo
                 ParameterType immOffset = outFmOffset + (too+co)*cfgRow*cfgCol
                                             + (trr+row)*cfgCol + col + tcc;
                 *(dram + immOffset) = readReg;
-                cout << "WB:" << too << "\t" << trr << "\t" << tcc << "\t" << (immOffset-outFmOffset) << ": " << readReg << endl;
+                //if(too == 0)
+                //    cout << "WB:" << too << "\t" << trr << "\t" << tcc << "\t" << (immOffset-outFmOffset+1) << ": " << readReg << endl;
             }
         }
     }
@@ -134,16 +146,17 @@ void InputTileLoad(DataType *dram, ParameterType isPadding, ParameterType inFmOf
                 int nPosition = ci + tii;
                 int yPosition = trr+row*cfgS + (isPadding ? (-kernelBoundary) : 0);
                 int xPosition = tcc+col*cfgS + (isPadding ? (-kernelBoundary) : 0);
-                if(nPosition < cfgN && yPosition < trrInMax && xPosition < tccInMax) {
-                    if(yPosition < 0 || xPosition < 0 || yPosition >= rowInMax || xPosition >= colInMax)
+                if(yPosition < trrInMax && xPosition < tccInMax) {
+                    if(nPosition >= cfgN || yPosition < 0 || xPosition < 0 ||
+                            yPosition >= rowInMax || xPosition >= colInMax)
                         inputFmBuffer[tii][trr][tcc] = 0;
                     else {
                         ParameterType immOffset = inFmOffset + nPosition*rowInMax*colInMax
                                                     + yPosition*colInMax + xPosition;
                         DataType readReg = *(dram + immOffset);
                         inputFmBuffer[tii][trr][tcc] = readReg;
-                        cout << "INPUT:" << nPosition << "\t" << yPosition << "\t" << xPosition <<
-                            "\t" << "ADDR:" << (immOffset-inFmOffset) << "\t" << readReg << endl;
+                        //cout << "INPUT:" << nPosition << "\t" << yPosition << "\t" << xPosition <<
+                        //    "\t" << "ADDR:" << (immOffset-inFmOffset) << "\t" << readReg << endl;
                     }
                 }
             }
@@ -170,18 +183,27 @@ void WeightTileLoad(DataType *dram, ParameterType weightOffset, ParameterType cf
     }
 }
 
-void BiasTileLoad(DataType *dram, ParameterType biasOffset, ParameterType cfgM, ParameterType co) {
+void BiasTileLoad(DataType *dram, ParameterType biasOffset, ParameterType isFullConnect, 
+                        ParameterType cfgCol, ParameterType cfgM, ParameterType col, ParameterType co) {
 #pragma HLS inline
-    for(int too = 0; too < TM; ++too) {
-        if(too + co < cfgM)
-            biasBuffer[too] = *(dram + biasOffset + co + too);
+    if(isFullConnect == 0) {
+        for(int too = 0; too < TM; ++too) {
+            if(too + co < cfgM)
+                biasBuffer[too] = *(dram + biasOffset + co + too);
+        }
+    } else {
+        for(int tcc = 0; tcc < TC; ++tcc) {
+            if(tcc + col < cfgCol)
+                biasBuffer[tcc] = *(dram + biasOffset + col + tcc);
+        }
     }
+
 }
 
 void LayerTop(DataType *dram, LayerCfgType cfgSet) {
 ParameterType weightOffset, biasOffset, inFmOffset, outFmOffset;
 ParameterType cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS;
-ParameterType isRelu, isPoolingMax, isPadding;
+ParameterType isRelu, isPoolingMax, isPadding, isFullConnect;
 ParameterType cfgPoolS, cfgPoolK;
 
     weightOffset = cfgSet.weightOffset;
@@ -191,6 +213,7 @@ ParameterType cfgPoolS, cfgPoolK;
     isPadding = cfgSet.isPadding;
     isRelu = cfgSet.isRelu;
     isPoolingMax = cfgSet.isPoolingMax;
+    isFullConnect = cfgSet.isFullConnect;
     cfgRow = cfgSet.cfgRow;
     cfgCol = cfgSet.cfgCol;
     cfgM = cfgSet.cfgM;
@@ -204,51 +227,36 @@ ParameterType cfgPoolS, cfgPoolK;
     for(int row = 0; row < cfgRow; row += TR) {
         for(int col = 0; col < cfgCol; col += TC) {
             for(int co = 0; co < cfgM; co += TM) {
+                int cfgRowTmp, cfgColTmp, rowTmp, colTmp, tileTR, tileTC;
                 for(int ci = 0; ci < cfgN; ci += TN) {
-                    int cfgRowTmp, cfgColTmp, rowTmp, colTmp, tileTR, tileTC;
-                    cout << "Top: " << row << "\t" << col << "\t" << co << "\t" << ci << "\t" << endl;
+                    //cout << "Top: " << row << "\t" << col << "\t" << co << "\t" << ci << "\t" << endl;
                     WeightTileLoad(dram, weightOffset, cfgK, cfgN, cfgM, co, ci);
-                    BiasTileLoad(dram, biasOffset, cfgM, co);
+                    BiasTileLoad(dram, biasOffset, isFullConnect, cfgCol, cfgM, col, co);
                     InputTileLoad(dram, isPadding, inFmOffset, cfgN, cfgK, cfgS, cfgRow, cfgCol,
                                     row, col, ci);
-                    TileConv(isRelu, cfgK, cfgS);
-                    cfgRowTmp = cfgRow;
-                    cfgColTmp = cfgCol;
-                    rowTmp = row;
-                    colTmp = col;
-                    tileTR = TR;
-                    tileTC = TC;
-                    if(isPoolingMax) {
-                        TilePooling(cfgPoolK, cfgPoolS);
-                        cfgRowTmp = (cfgRow-cfgPoolK)/cfgPoolS + 1;
-                        cfgColTmp = (cfgCol-cfgPoolK)/cfgPoolS + 1;
-                        rowTmp = (row/cfgPoolK);
-                        colTmp = (col/cfgPoolK);
-                        tileTR = (TR-cfgPoolK)/cfgPoolS + 1;
-                        tileTC = (TC-cfgPoolK)/cfgPoolS + 1;
-                    }
-                    TileWriteBack(dram, outFmOffset, isPoolingMax, cfgRowTmp, cfgColTmp, 
-                                    cfgM, rowTmp, colTmp, co, tileTR, tileTC);
+                    TileConv(isRelu, isFullConnect, cfgN, cfgK, cfgS, ci);
                 }
+                cfgRowTmp = cfgRow;
+                cfgColTmp = cfgCol;
+                rowTmp = row;
+                colTmp = col;
+                tileTR = TR;
+                tileTC = TC;
+                if(isPoolingMax) {
+                    TilePooling(cfgPoolK, cfgPoolS);
+                    cfgRowTmp = (cfgRow-cfgPoolK)/cfgPoolS + 1;
+                    cfgColTmp = (cfgCol-cfgPoolK)/cfgPoolS + 1;
+                    rowTmp = (row/cfgPoolK);
+                    colTmp = (col/cfgPoolK);
+                    tileTR = (TR-cfgPoolK)/cfgPoolS + 1;
+                    tileTC = (TC-cfgPoolK)/cfgPoolS + 1;
+                }
+                TileWriteBack(dram, outFmOffset, isPoolingMax, cfgRowTmp, cfgColTmp, 
+                                cfgM, rowTmp, colTmp, co, tileTR, tileTC);
             }
         }
     }
 }
-
-
-
-
-
-
-
-
-                                            
-
-
-                
-
-
-
 
 
 
