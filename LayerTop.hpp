@@ -3,8 +3,8 @@
 #define TN 8
 #define TR 16
 #define TC 16
-#define K_MAX 11
-#define S_MAX 4
+#define K_MAX 5
+#define S_MAX 1
 #define TR_IN (S_MAX*(TR-1)+K_MAX)
 #define TC_IN (S_MAX*(TC-1)+K_MAX)
 #define MIN(x, y) (x < y ? x : y)

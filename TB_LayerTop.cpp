@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
             cout << endl;
 
             correcNum += (index == (int)golden[j]);
-            cout << k*batchSize+j+1 <<": Calc Number is " << index << "\tExpected is " << ((int)golden[0]) << endl;
+            cout << k*batchSize+j+1 <<": Calc Number is " << index << "\tExpected is " << ((int)golden[j]) << endl;
             cout << "Accuracy is " << 1.0*correcNum/(k*batchSize+j+1) << endl;
         }
 
