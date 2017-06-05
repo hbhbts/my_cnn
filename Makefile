@@ -3,7 +3,7 @@
 all: clean run
 
 run:
-	c++ \
+	c++  -O2 \
 		TB_LayerTop.cpp LayerTop.cpp caffe.pb.cc -lprotobuf -lpthread
 
 clean:

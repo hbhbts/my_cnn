@@ -3,335 +3,134 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include "LayerTop.hpp"
-#include "caffe.pb.h"
 
-#include <fcntl.h>
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-#include <google/protobuf/text_format.h>
-
-const int kProtoReadBytesLimit = INT_MAX;
+#define LayerNum 4
 
 using namespace std;
-using google::protobuf::io::FileInputStream;
-using google::protobuf::io::FileOutputStream;
-using google::protobuf::io::ZeroCopyInputStream;
-using google::protobuf::io::CodedInputStream;
-using google::protobuf::io::ZeroCopyOutputStream;
-using google::protobuf::io::CodedOutputStream;
-using google::protobuf::Message;
 
-bool ReadProtoFromBinaryFile(const char* filename, Message* proto) {
-  int fd = open(filename, O_RDONLY);
-  if(fd == -1)
-    cout << "File not found: " << filename << endl;
-  ZeroCopyInputStream* raw_input = new FileInputStream(fd);
-  CodedInputStream* coded_input = new CodedInputStream(raw_input);
-  coded_input->SetTotalBytesLimit(kProtoReadBytesLimit, 536870912);
+int main(int argc, char **argv) {
+    int weightSize[LayerNum];
+    int biasSize[LayerNum];
+    int inputFmSize[LayerNum];
+    int resultSize;
+    int weightOffset, biasOffset, inputFmOffset[LayerNum];
+    int resultOffset;
 
-  bool success = proto->ParseFromCodedStream(coded_input);
-
-  delete coded_input;
-  delete raw_input;
-  close(fd);
-  return success;
-}
-
-
-int main(int argc, char** argv) {
-    int isPadding, isRelu, isPoolingMax;
-    int cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS;
-    int cfgPoolK, cfgPoolS;
-    int weightOffset, biasOffset, inFmOffset, outFmOffset;
-    int weightSize, biasSize, inputFmSize, outputFmSize;
-    float *dram;
-    FILE *labelfd, *inputfd, *fd;
-    int correcNum = 0;
-
-    caffe::NetParameter net;
-    const char weightsName[] = "lenet_iter_10000.caffemodel";
-    bool success = ReadProtoFromBinaryFile(weightsName, &net);
-    cout << "Net Name: " << net.name() << endl;
-    cout << "Layers Num: " << net.layer_size() << endl;
-
-    inputfd = fopen("img.bin", "rb");
-    if(inputfd == NULL) cout << "img.bin file not found." << endl;
-    labelfd = fopen("label.bin", "rb");
-    if(labelfd == NULL) cout << "label.bin file not found." << endl;
-
+    //parse arguments
     if(argc != 3) cout << "error input argc" << endl;
     int iterNum = atoi(argv[1]);
-    int batch = atoi(argv[2]);
+    int batchSize = atoi(argv[2]);
 
-    for(int k = 0; k < iterNum; ++k) {
-        caffe::LayerParameter layer = net.layer(1);
-        //cout << "\tLayer Type: " << layer.type() << endl;
-        caffe::ConvolutionParameter conv;
-        caffe::BlobProto blobs, blobs2;
-        caffe::BlobShape shape;
-        conv = layer.convolution_param();
-        blobs = layer.blobs(0);
-        blobs2 = layer.blobs(1);
-        shape = blobs.shape();
+    weightSize[0] = 20 * 1 * 5 * 5;
+    weightSize[1] = 50 * 20 * 5 * 5;
+    weightSize[2] = 500 * 800;
+    weightSize[3] = 10 * 500;
 
-        isPadding = 0;
-        isRelu = 0;
-        isPoolingMax = 0;
-        cfgRow = 24;
-        cfgCol = 24;
-        cfgM = shape.dim(0);
-        cfgN = shape.dim(1);
-        cfgK = conv.kernel_size(0);
-        cfgS = conv.stride(0);
-        cfgPoolK = 0;
-        cfgPoolS = 0;
-        weightSize = cfgM*cfgN*cfgK*cfgK;
-        biasSize = cfgM;
-        inputFmSize = cfgN*((cfgRow-1)*cfgS+cfgK)*((cfgCol-1)*cfgS+cfgK);
-        outputFmSize = cfgM*cfgRow*cfgCol;
-        dram = new float[weightSize+biasSize+inputFmSize+outputFmSize];
+    biasSize[0] = 20;
+    biasSize[1] = 50;
+    biasSize[2] = 500;
+    biasSize[3] = 10;
 
-        weightOffset = 0;
-        biasOffset = weightSize;
-        inFmOffset = weightSize + biasSize;
-        outFmOffset = weightSize + biasSize + inputFmSize;
-        //cout << "FPGA Configuration:" << endl;
-        //cout << "isPadding=" << isPadding << endl;
-        //cout << "isRelu=" << isRelu << endl;
-        //cout << "isPoolingMax=" << isPoolingMax << endl;
-        //cout << "cfgRow=" << cfgRow << endl;
-        //cout << "cfgCol=" << cfgCol << endl;
-        //cout << "cfgM=" << cfgM << endl;
-        //cout << "cfgN=" << cfgN << endl;
-        //cout << "cfgK=" << cfgK << endl;
-        //cout << "cfgS=" << cfgS << endl;
-        //cout << "cfgPoolK=" << cfgPoolK << endl;
-        //cout << "cfgPoolS=" << cfgPoolS << endl;
+    inputFmSize[0] = batchSize * 1 * 28 * 28;
+    inputFmSize[1] = batchSize * 20 * 12 * 12;
+    inputFmSize[2] = batchSize * 800;
+    inputFmSize[3] = batchSize * 500;
 
-        //load input data
-        int imgLen = fread(dram+inFmOffset, sizeof(float), inputFmSize, inputfd);
-
-        //load weights
-        //cout << "weights num: " << blobs.data_size() << endl;
-        for(int i = 0; i < weightSize; ++i)
-            *(dram+weightOffset+i) = blobs.data(i);
-        //load biases
-        //cout << "bias num: " << blobs2.data_size() << endl;
-        for(int i = 0; i < biasSize; ++i) 
-            *(dram+biasOffset+i) = blobs2.data(i);
+    resultSize = batchSize * 10;
 
 
-        LayerTop(dram, LayerCfgType(weightOffset, biasOffset, inFmOffset, outFmOffset,
-                    0, 0, 1, 0,
-                    24, 24, 20, 1, 5, 1, 2, 2));
+    weightOffset = 0;
+    biasOffset = 0;
 
-        fd = fopen("conv1.bin", "wb");
-        if(fd == NULL) cout << "covn1.bin file not found." << endl;
-        fwrite(dram+outFmOffset, sizeof(float), outputFmSize/4, fd);
-        fclose(fd);
-        delete dram;
 
-        //conv2 load to fpga
-        layer = net.layer(3);
-        //cout << "\tLayer Type: " << layer.type() << endl;
-        conv = layer.convolution_param();
-        blobs = layer.blobs(0);
-        blobs2 = layer.blobs(1);
-        shape = blobs.shape();
+    int weightSum = 0;
+    int biasSum = 0;
+    for(int i = 0; i < LayerNum; ++i) {
+        weightSum += weightSize[i];
+        biasSum += biasSize[i];
+    }
 
-        cfgRow = 8;
-        cfgCol = 8;
-        cfgM = shape.dim(0);
-        cfgN = shape.dim(1);
-        cfgK = conv.kernel_size(0);
-        cfgS = conv.stride(0);
-        cfgPoolK = 0;
-        cfgPoolS = 0;
-        weightSize = cfgM*cfgN*cfgK*cfgK;
-        biasSize = cfgM;
-        inputFmSize = cfgN*((cfgRow-1)*cfgS+cfgK)*((cfgCol-1)*cfgS+cfgK);
-        outputFmSize = cfgM*cfgRow*cfgCol;
-        dram = new float[weightSize+biasSize+inputFmSize+outputFmSize];
+    biasOffset = weightSum;
+    inputFmOffset[0] = weightSum + biasSum;
+    inputFmOffset[1] = inputFmOffset[0] + inputFmSize[0];
+    inputFmOffset[2] = inputFmOffset[1] + inputFmSize[1];
+    inputFmOffset[3] = inputFmOffset[2] + inputFmSize[2];
+    resultOffset = inputFmOffset[3] + inputFmSize[3];
 
-        weightOffset = 0;
-        biasOffset = weightSize;
-        inFmOffset = weightSize + biasSize;
-        outFmOffset = weightSize + biasSize + inputFmSize;
+    float *dram = new float[resultOffset + resultSize];
 
-        //cout << "FPGA Configuration:" << endl;
-        //cout << "isPadding=" << isPadding << endl;
-        //cout << "isRelu=" << isRelu << endl;
-        //cout << "isPoolingMax=" << isPoolingMax << endl;
-        //cout << "cfgRow=" << cfgRow << endl;
-        //cout << "cfgCol=" << cfgCol << endl;
-        //cout << "cfgM=" << cfgM << endl;
-        //cout << "cfgN=" << cfgN << endl;
-        //cout << "cfgK=" << cfgK << endl;
-        //cout << "cfgS=" << cfgS << endl;
-        //cout << "cfgPoolK=" << cfgPoolK << endl;
-        //cout << "inputFmSize=" << inputFmSize << endl;
+    FILE *fhd = fopen("weight.bin", "rb");
+    int readLen = fread(dram+weightOffset, sizeof(float), weightSum, fhd);
+    //for(int i = 0; i < weightSum; ++i) cout << *(dram+weightOffset+i) << endl;
+    readLen = fread(dram+biasOffset, sizeof(float), biasSum, fhd);
+    //for(int i = 0; i < biasSum; ++i) cout << *(dram+biasOffset+i) << endl;
+    fclose(fhd);
 
-        //load input data
-        fd = fopen("conv1.bin", "rb");
-        if(fd == NULL) cout << "conv1.bin file not found." << endl;
-        imgLen = fread(dram+inFmOffset, sizeof(float), inputFmSize, fd);
-        fclose(fd);
+    //cout << weightOffset << "\t" << biasOffset << "\t" << inputFmOffset[0] << "\t" <<
+    //    inputFmOffset[1] << "\t" << inputFmOffset[1] << "\t" << inputFmOffset[2] << "\t" << 
+    //    inputFmOffset[3] << "\t" << endl;
 
-        //load weights
-        //cout << "weights num: " << blobs.data_size() << endl;
-        for(int i = 0; i < weightSize; ++i)
-            *(dram+weightOffset+i) = blobs.data(i);
-        //load biases
-        //cout << "bias num: " << blobs2.data_size() << endl;
-        for(int i = 0; i < biasSize; ++i) 
-            *(dram+biasOffset+i) = blobs2.data(i);
-        LayerTop(dram, LayerCfgType(weightOffset, biasOffset, inFmOffset, outFmOffset,
-                    0, 0, 1, 0,
-                    8, 8, 50, 20, 5, 1, 2, 2));
-        fd = fopen("conv2.bin", "ab+");
-        if(fd == NULL) cout << "covn2.bin file not found." << endl;
-        fwrite(dram+outFmOffset, sizeof(float), outputFmSize/4, fd);
-        fclose(fd);
-        delete dram;
+    int correcNum = 0;
+    int recordLen = iterNum;
+    fhd = fopen("img.bin", "rb");
+    FILE *labelfd = fopen("label.bin", "rb");
+    if(labelfd == NULL) cout << "label.bin file not found." << endl;
+    for(int k = 0; k < ceil(1.0*iterNum/batchSize); ++k) {
 
-        if(k%batch != batch-1 && k != iterNum-1) continue;
-        if(k == iterNum-1 && iterNum != batch) batch = iterNum%batch;
+        int bMax;
+        if(recordLen < batchSize)
+            bMax = recordLen;
+        else bMax = batchSize;
 
-        //ip3 load to fpga
-        layer = net.layer(5);
-        //cout << "\tLayer Type: " << layer.type() << endl;
-        conv = layer.convolution_param();
-        blobs = layer.blobs(0);
-        blobs2 = layer.blobs(1);
-        shape = blobs.shape();
+        recordLen -= batchSize;
+            
+        readLen = fread(dram+inputFmOffset[0], sizeof(float), bMax*(inputFmSize[0]/batchSize), fhd);
 
-        cfgRow = 1;
-        cfgCol = 1;
-        cfgM = 500;
-        cfgN = 800;
-        cfgK = 1;
-        cfgS = 1;
-        cfgPoolK = 0;
-        cfgPoolS = 0;
-        weightSize = cfgM*cfgN*cfgK*cfgK;
-        biasSize = cfgM;
-        inputFmSize = batch * cfgN*((cfgRow-1)*cfgS+cfgK)*((cfgCol-1)*cfgS+cfgK);
-        outputFmSize = batch * cfgM*cfgRow*cfgCol;
-        dram = new float[weightSize+biasSize+inputFmSize+outputFmSize];
+        char *golden = new char[bMax];
+        readLen = fread(golden, sizeof(char), bMax, labelfd);
+        //cout << "bMax: " << bMax << endl;
+        for(int b = 0; b < bMax; ++b) {
 
-        weightOffset = 0;
-        biasOffset = inputFmSize;
-        inFmOffset = inputFmSize + biasSize;
-        outFmOffset = inputFmSize + biasSize + weightSize;
+            LayerTop(dram, LayerCfgType(
+                        weightOffset, biasOffset, inputFmOffset[0]+b*(inputFmSize[0]/batchSize),
+                        inputFmOffset[1]+b*(inputFmSize[1]/batchSize),
+                        0, 0, 1, 0,
+                        24, 24, 20, 1, 5, 1, 2, 2));
+            
+            //for(int i = 0; i < inputFmSize[1]; ++i) cout << "inputFmSize1: " << *(dram+inputFmOffset[1]+i) << endl;
+            //cout << "output2: " << inputFmOffset[2]+b*(inputFmSize[2]/batchSize) << endl;
+            LayerTop(dram, LayerCfgType(
+                        weightOffset+weightSize[0], biasOffset+biasSize[0],
+                        inputFmOffset[1]+b*(inputFmSize[1]/batchSize),
+                        inputFmOffset[2]+b*(inputFmSize[2]/batchSize),
+                        0, 0, 1, 0,
+                        8, 8, 50, 20, 5, 1, 2, 2));
+        }
 
-        //cout << "FPGA Configuration:" << endl;
-        //cout << "isPadding=" << isPadding << endl;
-        //cout << "isRelu=" << isRelu << endl;
-        //cout << "isPoolingMax=" << isPoolingMax << endl;
-        //cout << "cfgRow=" << cfgRow << endl;
-        //cout << "cfgCol=" << cfgCol << endl;
-        //cout << "cfgM=" << cfgM << endl;
-        //cout << "cfgN=" << cfgN << endl;
-        //cout << "cfgK=" << cfgK << endl;
-        //cout << "cfgS=" << cfgS << endl;
-        //cout << "cfgPoolK=" << cfgPoolK << endl;
-        //cout << "inputFmSize=" << inputFmSize << endl;
-
-        //load input data
-        fd = fopen("conv2.bin", "rb");
-        if(fd == NULL) cout << "conv1.bin file not found." << endl;
-        imgLen = fread(dram+weightOffset, sizeof(float), inputFmSize, fd);
-        fclose(fd);
-
-        //load weights
-        //cout << "weights num: " << blobs.data_size() << endl;
-        for(int i = 0; i < cfgM; ++i)
-            for(int j = 0; j < cfgN; ++j)
-                *(dram+inFmOffset+j*cfgM+i) = blobs.data(i*cfgN+j);
-        //load biases
-        //cout << "bias num: " << blobs2.data_size() << endl;
-        for(int i = 0; i < biasSize; ++i) 
-            *(dram+biasOffset+i) = blobs2.data(i);
-        LayerTop(dram, LayerCfgType(weightOffset, biasOffset, inFmOffset, outFmOffset,
+        //for(int i = 0; i < inputFmSize[2]; ++i) cout << "inputFmSize2: " << *(dram+inputFmOffset[2]+i) << endl;
+        LayerTop(dram, LayerCfgType(
+                    inputFmOffset[2], biasOffset+biasSize[0]+biasSize[1],
+                    weightOffset+weightSize[0]+weightSize[1], inputFmOffset[3],
                     0, 1, 0, 1,
-                    1, 500, batch, 800, 1, 1, 0, 0));
+                    1, 500, bMax, 800, 1, 1, 0, 0));
 
-        fd = fopen("ip3.bin", "wb");
-        if(fd == NULL) cout << "ip3.bin file not found." << endl;
-        fwrite(dram+outFmOffset, sizeof(float), outputFmSize, fd);
-        fclose(fd);
-        delete dram;
-
-
-
-        //ip4 load to fpga
-        layer = net.layer(7);
-        //cout << "\tLayer Type: " << layer.type() << endl;
-        conv = layer.convolution_param();
-        blobs = layer.blobs(0);
-        blobs2 = layer.blobs(1);
-        shape = blobs.shape();
-
-        cfgRow = 1;
-        cfgCol = 1;
-        cfgM = 10;
-        cfgN = 500;
-        cfgK = 1;
-        cfgS = 1;
-        cfgPoolK = 0;
-        cfgPoolS = 0;
-        weightSize = cfgM*cfgN*cfgK*cfgK;
-        biasSize = cfgM;
-        inputFmSize = batch * cfgN*((cfgRow-1)*cfgS+cfgK)*((cfgCol-1)*cfgS+cfgK);
-        outputFmSize = batch * cfgM*cfgRow*cfgCol;
-        dram = new float[weightSize+biasSize+inputFmSize+outputFmSize];
-
-        weightOffset = 0;
-        biasOffset = inputFmSize;
-        inFmOffset = inputFmSize + biasSize;
-        outFmOffset = inputFmSize + biasSize + weightSize;
-
-        //cout << "FPGA Configuration:" << endl;
-        //cout << "isPadding=" << isPadding << endl;
-        //cout << "isRelu=" << isRelu << endl;
-        //cout << "isPoolingMax=" << isPoolingMax << endl;
-        //cout << "cfgRow=" << cfgRow << endl;
-        //cout << "cfgCol=" << cfgCol << endl;
-        //cout << "cfgM=" << cfgM << endl;
-        //cout << "cfgN=" << cfgN << endl;
-        //cout << "cfgK=" << cfgK << endl;
-        //cout << "cfgS=" << cfgS << endl;
-        //cout << "cfgPoolK=" << cfgPoolK << endl;
-        //cout << "inputFmSize=" << inputFmSize << endl;
-
-        //load input data
-        fd = fopen("ip3.bin", "rb");
-        if(fd == NULL) cout << "ip3.bin file not found." << endl;
-        imgLen = fread(dram+weightOffset, sizeof(float), inputFmSize, fd);
-        fclose(fd);
-
-        //load weights
-        //cout << "weights num: " << blobs.data_size() << endl;
-        for(int i = 0; i < cfgM; ++i)
-            for(int j = 0; j < cfgN; ++j)
-                *(dram+inFmOffset+j*cfgM+i) = blobs.data(i*cfgN+j);
-        //load biases
-        //cout << "bias num: " << blobs2.data_size() << endl;
-        for(int i = 0; i < biasSize; ++i) 
-            *(dram+biasOffset+i) = blobs2.data(i);
-        LayerTop(dram, LayerCfgType(weightOffset, biasOffset, inFmOffset, outFmOffset,
+        //for(int i = 0; i < inputFmSize[3]; ++i) cout << "inputFmSize3: " << *(dram+inputFmOffset[3]+i) << endl;
+        LayerTop(dram, LayerCfgType(
+                    inputFmOffset[3], biasOffset+biasSize[0]+biasSize[1]+biasSize[2],
+                    weightOffset+weightSize[0]+weightSize[1]+weightSize[2], resultOffset,
                     0, 0, 0, 1,
-                    1, 10, batch, 500, 1, 1, 0, 0));
+                    1, 10, bMax, 500, 1, 1, 0, 0));
 
-
-        //cout << "\toutput:" << endl;
+        //Calc results
         int index = 0;
         float max, readData;
-        int tmpSize = outputFmSize/batch;
-        for(int j = 0; j < batch; ++j) {
+        int tmpSize = resultSize/batchSize;
+        //cout << "tmpSize = " << tmpSize << endl;
+        for(int j = 0; j < bMax; ++j) {
             for(int i = 0; i < tmpSize; ++i) {
-                readData = *(dram+outFmOffset+j*tmpSize+i);
+                readData = *(dram+resultOffset+j*tmpSize+i);
                 cout <<"\t" << readData;
                 if(i == 0) {
                     max = readData;
@@ -344,40 +143,17 @@ int main(int argc, char** argv) {
             }
             cout << endl;
 
-            char golden[1];
-            int labelLen = fread(golden, sizeof(char), 1, labelfd);
-            correcNum += (index == (int)golden[0]);
-            cout << k+1-batch+j+1 <<": Calc Number is " << index << "\tExpected is " << ((int)golden[0]) << endl;
-            cout << "Accuracy is " << 1.0*correcNum/(k+1-batch+j+1) << endl;
+            correcNum += (index == (int)golden[j]);
+            cout << k*batchSize+j+1 <<": Calc Number is " << index << "\tExpected is " << ((int)golden[0]) << endl;
+            cout << "Accuracy is " << 1.0*correcNum/(k*batchSize+j+1) << endl;
         }
-        remove("conv2.bin");
-
-
-
-/*
-
-        cout << "\tweights:" << endl;
-        for(int i = 0; i < weightSize; ++i) 
-            cout << *(dram+weightOffset+i) << endl;
-
-        cout << "\tbiases:" << endl;
-        for(int i = 0; i < biasSize; ++i) 
-            cout << *(dram+biasOffset+i) << endl;
-
-        cout << "\tinput:" << endl;
-        for(int i = 0; i < inputFmSize; ++i) 
-            cout << "IMG:" << (i+1) << "\t" << *(dram+inFmOffset+i) << endl;
-  
-*/            
-
-
-        delete dram;
 
     }
-    fclose(inputfd);
-
+    fclose(fhd);
+    fclose(labelfd);
 
     return 0;
+
 }
 
 
