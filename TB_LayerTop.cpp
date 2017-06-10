@@ -60,8 +60,9 @@ int main(int argc, char **argv) {
     resultOffset = inputFmOffset[3] + inputFmSize[3];
 
     float *dram = new float[resultOffset + resultSize];
+    cout << "Total Length: " << (resultOffset + resultSize) << endl;
 
-    FILE *fhd = fopen("weight.bin", "rb");
+    FILE *fhd = fopen("/home/hht/work/my_cnn/weight.bin", "rb");
     int readLen = fread(dram+weightOffset, sizeof(float), weightSum, fhd);
     //for(int i = 0; i < weightSum; ++i) cout << *(dram+weightOffset+i) << endl;
     readLen = fread(dram+biasOffset, sizeof(float), biasSum, fhd);
@@ -74,8 +75,8 @@ int main(int argc, char **argv) {
 
     int correcNum = 0;
     int recordLen = iterNum;
-    fhd = fopen("img.bin", "rb");
-    FILE *labelfd = fopen("label.bin", "rb");
+    fhd = fopen("/home/hht/work/my_cnn/img.bin", "rb");
+    FILE *labelfd = fopen("/home/hht/work/my_cnn/label.bin", "rb");
     if(labelfd == NULL) cout << "label.bin file not found." << endl;
     for(int k = 0; k < ceil(1.0*iterNum/batchSize); ++k) {
 
@@ -93,7 +94,7 @@ int main(int argc, char **argv) {
         //cout << "bMax: " << bMax << endl;
         for(int b = 0; b < bMax; ++b) {
 
-            LayerTop(dram, LayerCfgType(
+            LayerTop(dram, dram, dram, dram, LayerCfgType(
                         weightOffset, biasOffset, inputFmOffset[0]+b*(inputFmSize[0]/batchSize),
                         inputFmOffset[1]+b*(inputFmSize[1]/batchSize),
                         0, 0, 1, 0,
@@ -101,7 +102,7 @@ int main(int argc, char **argv) {
             
             //for(int i = 0; i < inputFmSize[1]; ++i) cout << "inputFmSize1: " << *(dram+inputFmOffset[1]+i) << endl;
             //cout << "output2: " << inputFmOffset[2]+b*(inputFmSize[2]/batchSize) << endl;
-            LayerTop(dram, LayerCfgType(
+            LayerTop(dram, dram, dram, dram, LayerCfgType(
                         weightOffset+weightSize[0], biasOffset+biasSize[0],
                         inputFmOffset[1]+b*(inputFmSize[1]/batchSize),
                         inputFmOffset[2]+b*(inputFmSize[2]/batchSize),
@@ -110,18 +111,18 @@ int main(int argc, char **argv) {
         }
 
         //for(int i = 0; i < inputFmSize[2]; ++i) cout << "inputFmSize2: " << *(dram+inputFmOffset[2]+i) << endl;
-        LayerTop(dram, LayerCfgType(
+        LayerTop(dram, dram, dram, dram, LayerCfgType(
                     inputFmOffset[2], biasOffset+biasSize[0]+biasSize[1],
                     weightOffset+weightSize[0]+weightSize[1], inputFmOffset[3],
                     0, 1, 0, 1,
-                    1, 500, bMax, 800, 1, 1, 0, 0));
+                    20, 25, bMax, 800, 1, 1, 1, 1));
 
         //for(int i = 0; i < inputFmSize[3]; ++i) cout << "inputFmSize3: " << *(dram+inputFmOffset[3]+i) << endl;
-        LayerTop(dram, LayerCfgType(
+        LayerTop(dram, dram, dram, dram, LayerCfgType(
                     inputFmOffset[3], biasOffset+biasSize[0]+biasSize[1]+biasSize[2],
                     weightOffset+weightSize[0]+weightSize[1]+weightSize[2], resultOffset,
                     0, 0, 0, 1,
-                    1, 10, bMax, 500, 1, 1, 0, 0));
+                    1, 10, bMax, 500, 1, 1, 1, 1));
 
         //Calc results
         int index = 0;
