@@ -1,8 +1,8 @@
 
-#define TM 64
-#define TN 7
-#define TR 32
-#define TC 32
+#define TM 32
+#define TN 16
+#define TR 28
+#define TC 28
 #define K_MAX 5
 #define S_MAX 1
 #define TR_IN (S_MAX*(TR-1)+K_MAX)
@@ -50,6 +50,6 @@ struct LayerCfgType{
 };
 
 //function define
-void LayerTop(DataType *dram, DataType *dram2, DataType *dram3, DataType *dram4, LayerCfgType cfgSet);
+void LayerTop(DataType *dram, DataType *dram2, DataType *dram3, LayerCfgType cfgSet);
 
 

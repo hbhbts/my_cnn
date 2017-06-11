@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
         //cout << "bMax: " << bMax << endl;
         for(int b = 0; b < bMax; ++b) {
 
-            LayerTop(dram, dram, dram, dram, LayerCfgType(
+            LayerTop(dram, dram, dram, LayerCfgType(
                         weightOffset, biasOffset, inputFmOffset[0]+b*(inputFmSize[0]/batchSize),
                         inputFmOffset[1]+b*(inputFmSize[1]/batchSize),
                         0, 0, 1, 0,
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
             
             //for(int i = 0; i < inputFmSize[1]; ++i) cout << "inputFmSize1: " << *(dram+inputFmOffset[1]+i) << endl;
             //cout << "output2: " << inputFmOffset[2]+b*(inputFmSize[2]/batchSize) << endl;
-            LayerTop(dram, dram, dram, dram, LayerCfgType(
+            LayerTop(dram, dram, dram, LayerCfgType(
                         weightOffset+weightSize[0], biasOffset+biasSize[0],
                         inputFmOffset[1]+b*(inputFmSize[1]/batchSize),
                         inputFmOffset[2]+b*(inputFmSize[2]/batchSize),
@@ -111,14 +111,14 @@ int main(int argc, char **argv) {
         }
 
         //for(int i = 0; i < inputFmSize[2]; ++i) cout << "inputFmSize2: " << *(dram+inputFmOffset[2]+i) << endl;
-        LayerTop(dram, dram, dram, dram, LayerCfgType(
+        LayerTop(dram, dram, dram, LayerCfgType(
                     inputFmOffset[2], biasOffset+biasSize[0]+biasSize[1],
                     weightOffset+weightSize[0]+weightSize[1], inputFmOffset[3],
                     0, 1, 0, 1,
                     20, 25, bMax, 800, 1, 1, 1, 1));
 
         //for(int i = 0; i < inputFmSize[3]; ++i) cout << "inputFmSize3: " << *(dram+inputFmOffset[3]+i) << endl;
-        LayerTop(dram, dram, dram, dram, LayerCfgType(
+        LayerTop(dram, dram, dram, LayerCfgType(
                     inputFmOffset[3], biasOffset+biasSize[0]+biasSize[1]+biasSize[2],
                     weightOffset+weightSize[0]+weightSize[1]+weightSize[2], resultOffset,
                     0, 0, 0, 1,
