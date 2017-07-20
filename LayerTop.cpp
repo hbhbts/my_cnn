@@ -6,23 +6,17 @@ using namespace std;
 
 
 
-static DataType immBuffer2[TM][TR][TC];
-static DataType immPoolArray[TM];
-static DataType immPoolBuffer[TM][TR][TC];
-
 
 void elementUnit(bool isRelu, bool isFullConnect, ParameterType cfgN, ParameterType cfgK,
                     int ci, int trr, int tcc, int kernelPos, int trrInPos, int tccInPos, bool sel,
                     DataType biasBuffer[BIAS_NUM], DataType weightBuffer[TM][TN][K_MAX*K_MAX],
-                    DataType inputFmBuffer[TN][TR_IN][TC_IN]) {
+                    DataType inputFmBuffer[TN][TR_IN][TC_IN], DataType immBuffer2[TM][TR][TC]) {
 #pragma HLS inline off
 static DataType immBuffer[2][TM][TR][TC];
 #pragma HLS resource variable=immBuffer core=RAM_2P_BRAM
 #pragma HLS array_partition variable=immBuffer dim=1 complete
 #pragma HLS array_partition variable=immBuffer dim=2 complete
 #pragma HLS dependence variable=immBuffer array inter false
-#pragma HLS resource variable=immBuffer2 core=RAM_2P_BRAM  
-#pragma HLS array_partition variable=immBuffer2 dim=1 complete
 
     for(int too = 0; too < TM; ++too) {
 #pragma HLS unroll
@@ -53,7 +47,8 @@ static DataType immBuffer[2][TM][TR][TC];
 
 void PE(bool isRelu, bool isFullConnect, ParameterType cfgRow, ParameterType cfgN, ParameterType cfgK,
             ParameterType cfgS, int ci, int i, int j, bool sel, DataType biasBuffer[BIAS_NUM],
-            DataType weightBuffer[TM][TN][K_MAX*K_MAX], DataType inputFmBuffer[TN][TR_IN][TC_IN]
+            DataType weightBuffer[TM][TN][K_MAX*K_MAX], DataType inputFmBuffer[TN][TR_IN][TC_IN],
+            DataType immBuffer2[TM][TR][TC]
             ) {
 #pragma HLS inline off
     for(int trr = 0; trr < cfgRow; ++trr) {
@@ -64,7 +59,7 @@ void PE(bool isRelu, bool isFullConnect, ParameterType cfgRow, ParameterType cfg
             int tccInPos = tcc * cfgS + j;
 
             elementUnit(isRelu, isFullConnect, cfgN, cfgK, ci, trr, tcc, kernelPos, trrInPos, tccInPos, sel,
-                            biasBuffer, weightBuffer, inputFmBuffer);
+                            biasBuffer, weightBuffer, inputFmBuffer, immBuffer2);
 
         }
     }
@@ -72,9 +67,8 @@ void PE(bool isRelu, bool isFullConnect, ParameterType cfgRow, ParameterType cfg
 
 
 void TileConv(bool isRelu, bool isFullConnect, ParameterType cfgRow, ParameterType cfgN, ParameterType cfgK,
-                ParameterType cfgS, int ci, DataType biasBuffer[BIAS_NUM], 
-                DataType weightBuffer[TM][TN][K_MAX*K_MAX], 
-                DataType inputFmBuffer[TN][TR_IN][TC_IN]) {
+                ParameterType cfgS, int ci, DataType biasBuffer[BIAS_NUM], DataType weightBuffer[TM][TN][K_MAX*K_MAX], 
+                DataType inputFmBuffer[TN][TR_IN][TC_IN], DataType immBuffer2[TM][TR][TC]) {
 #pragma HLS inline off
 
     static bool sel = 0;
@@ -84,16 +78,17 @@ void TileConv(bool isRelu, bool isFullConnect, ParameterType cfgRow, ParameterTy
                 sel = 0;
             else 
                 sel = !sel;
-            	PE(isRelu, isFullConnect, cfgRow, cfgN, cfgK, cfgS, ci, i, j, sel, biasBuffer, weightBuffer, inputFmBuffer);
+            	PE(isRelu, isFullConnect, cfgRow, cfgN, cfgK, cfgS, ci, i, j, sel, biasBuffer, weightBuffer,
+                        inputFmBuffer, immBuffer2);
         }
     }
 }
 
-void TilePooling(ParameterType cfgN, ParameterType cfgK, ParameterType poolK, ParameterType poolS) {
+void TilePooling(ParameterType cfgN, ParameterType cfgK, ParameterType poolK, ParameterType poolS,
+                    DataType immBuffer2[TM][TR][TC], DataType immPoolBuffer[TM][TR][TC]) {
 #pragma HLS inline off
+static DataType immPoolArray[TM];
 #pragma HLS array_partition variable=immPoolArray dim=1 complete
-#pragma HLS resource variable=immPoolBuffer core=RAM_2P_BRAM
-#pragma HLS array_partition variable=immPoolBuffer dim=1 complete
     ParameterType trrOut = (TR-poolK)/poolS+1; //need to be integer
     ParameterType tccOut = (TC-poolK)/poolS+1; //need to be integer
     //bool sel = ((cfgN/TN)%2) && (cfgN%TN == 0) ^ ((cfgK*cfgK)%2);
@@ -106,15 +101,11 @@ void TilePooling(ParameterType cfgN, ParameterType cfgK, ParameterType poolK, Pa
                     if(j < poolK) {
                         for(int too = 0; too < TM; ++too) {
 #pragma HLS unroll
+                            DataType tmpReg = immBuffer2[too][trr*poolS+i][tcc*poolS+j];
                             if(i == 0 && j == 0)
-                                immPoolArray[too] = immBuffer2[too][trr*poolS+i][tcc*poolS+j];
+                                immPoolArray[too] = tmpReg;
                             else
-                                immPoolArray[too] = immBuffer2[too][trr*poolS+i][tcc*poolS+j]
-                                                    > immPoolArray[too] ?
-                                                    immBuffer2[too][trr*poolS+i][tcc*poolS+j]
-                                                    : immPoolArray[too];
-                            //if(too == 0)
-                            //    cout << "LOOP: " << immBuffer[too][trr*poolS+i][tcc*poolS+j] << endl;
+                                immPoolArray[too] = tmpReg > immPoolArray[too] ? tmpReg : immPoolArray[too];
                             immPoolBuffer[too][trr][tcc] = immPoolArray[too];
                             //if(too == 0)
                             //    cout << "POOL: " << too << "\t" << trr << "\t" << tcc << "\t" << immPoolArray[too] << endl;
@@ -130,7 +121,7 @@ void TilePooling(ParameterType cfgN, ParameterType cfgK, ParameterType poolK, Pa
 
 void TileWriteBack(DataType *dram, ParameterType outFmOffset, ParameterType cfgRow,
         ParameterType cfgCol, ParameterType cfgM, ParameterType row, ParameterType col,
-        ParameterType co, ParameterType tileTR, ParameterType tileTC) {
+        ParameterType co, ParameterType tileTR, ParameterType tileTC, DataType immPoolBuffer[TM][TR][TC]) {
 #pragma HLS inline
     for(int too = 0; too < MIN(TM,cfgM-co); ++too) {
         for(int trr = 0; trr < MIN(tileTR, cfgRow-row); ++ trr) {
@@ -142,6 +133,7 @@ void TileWriteBack(DataType *dram, ParameterType outFmOffset, ParameterType cfgR
                     ParameterType immOffset = outFmOffset + (too+co)*cfgRow*cfgCol
                                                 + (trr+row)*cfgCol + col + tcc;
                     *(dram + immOffset) = readReg;
+                    //cout << immOffset << endl;
                 }
                 //if(too == 0)
                 //    cout << "WB:" << too << "\t" << trr << "\t" << tcc << "\t" << (immOffset-outFmOffset+1) << ": " << readReg << endl;
@@ -152,7 +144,7 @@ void TileWriteBack(DataType *dram, ParameterType outFmOffset, ParameterType cfgR
 
 void TileWriteBackWrapper(DataType *dram, ParameterType outFmOffset, bool isPoolingMax, ParameterType cfgRow,
         ParameterType cfgCol, ParameterType cfgM, ParameterType cfgPoolK, ParameterType cfgPoolS, 
-        ParameterType row, ParameterType col, ParameterType co) {
+        ParameterType row, ParameterType col, ParameterType co, DataType immPoolBuffer[TM][TR][TC]) {
 #pragma HLS inline off
 
     int cfgRowTmp, cfgColTmp, rowTmp, colTmp, tileTR, tileTC;
@@ -173,7 +165,7 @@ void TileWriteBackWrapper(DataType *dram, ParameterType outFmOffset, bool isPool
         tileTC = TC;
     }
     TileWriteBack(dram, outFmOffset, cfgRowTmp, cfgColTmp, 
-                    cfgM, rowTmp, colTmp, co, tileTR, tileTC);
+                    cfgM, rowTmp, colTmp, co, tileTR, tileTC, immPoolBuffer);
 }
 
 
@@ -261,57 +253,67 @@ void TileProcessEngine(DataType *dram, DataType *dram2, ParameterType weightOffs
                         ParameterType biasOffset, ParameterType inFmOffset, bool isPadding,
                         bool isRelu, bool isFullConnect, ParameterType cfgRow, ParameterType cfgCol,
                         ParameterType cfgM, ParameterType cfgN, ParameterType cfgK, ParameterType cfgS,
-                        int row, int col, int co, int ci) {
+                        int row, int col, int co, int ci, DataType immBuffer2[TM][TR][TC]) {
 #pragma HLS inline
-    static DataType biasBuffer[2][BIAS_NUM];
-#pragma HLS array_partition variable=biasBuffer dim=1 complete
-#pragma HLS array_partition variable=biasBuffer dim=2 complete
-    static DataType weightBuffer[2][TM][TN][K_MAX*K_MAX];
-#pragma HLS resource variable=weightBuffer core=RAM_2P_BRAM
-#pragma HLS array_partition variable=weightBuffer dim=1 complete
-#pragma HLS array_partition variable=weightBuffer dim=2 complete
-#pragma HLS array_partition variable=weightBuffer dim=3 complete
-    static DataType inputFmBuffer[2][TN][TR_IN][TC_IN];
-#pragma HLS resource variable=inputFmBuffer core=RAM_2P_BRAM
-#pragma HLS array_partition variable=inputFmBuffer dim=1 complete
-#pragma HLS array_partition variable=inputFmBuffer dim=2 complete
+    static DataType biasBuffer0[BIAS_NUM];
+#pragma HLS array_partition variable=biasBuffer0 dim=1 complete
+    static DataType biasBuffer1[BIAS_NUM];
+#pragma HLS array_partition variable=biasBuffer1 dim=1 complete
+    static DataType weightBuffer0[TM][TN][K_MAX*K_MAX];
+#pragma HLS resource variable=weightBuffer0 core=RAM_2P_BRAM
+#pragma HLS array_partition variable=weightBuffer0 dim=1 complete
+#pragma HLS array_partition variable=weightBuffer0 dim=2 complete
+    static DataType weightBuffer1[TM][TN][K_MAX*K_MAX];
+#pragma HLS resource variable=weightBuffer1 core=RAM_2P_BRAM
+#pragma HLS array_partition variable=weightBuffer1 dim=1 complete
+#pragma HLS array_partition variable=weightBuffer1 dim=2 complete
+    static DataType inputFmBuffer0[TN][TR_IN][TC_IN];
+#pragma HLS resource variable=inputFmBuffer0 core=RAM_2P_BRAM
+#pragma HLS array_partition variable=inputFmBuffer0 dim=1 complete
+    static DataType inputFmBuffer1[TN][TR_IN][TC_IN];
+#pragma HLS resource variable=inputFmBuffer1 core=RAM_2P_BRAM
+#pragma HLS array_partition variable=inputFmBuffer1 dim=1 complete
 
-    static enum {TPE_START = 0, TPE_RUN = 1, TPE_END = 2} tpeState = TPE_START;
+    static enum {TPE_START = 0, TPE_RUN = 1} tpeState = TPE_START;
 
 
-    static int num = 0;
-    num = ci == 0 ? 0 : num + 1;
+    static bool sel = 0;
+    sel = ci == 0 ? 0 : !sel;
 
     static int ci2 = 0;
 
-    int index = num%2;
-    int index2 = (num+1)%2;
-
-
-    if(tpeState == TPE_RUN || tpeState == TPE_END)
-        TileConv(isRelu, isFullConnect, cfgRow,  cfgN, cfgK, cfgS, ci2, biasBuffer[index2], weightBuffer[index2], inputFmBuffer[index2]);
-    if(tpeState == TPE_START || tpeState == TPE_RUN) {
-        WeightTileLoad(dram, weightOffset, biasOffset, isFullConnect, cfgCol, cfgK, cfgN, cfgM, col, co, ci, weightBuffer[index], biasBuffer[index]);
-        InputTileLoad(dram2, isPadding, inFmOffset, cfgN, cfgK, cfgS, cfgRow, cfgCol, row, col, ci, inputFmBuffer[index]);
-     }
 
     switch(tpeState) {
         case TPE_START:
-            if(ci+TN+1 > cfgN)
-                tpeState = TPE_END;
+            WeightTileLoad(dram, weightOffset, biasOffset, isFullConnect, cfgCol, cfgK, cfgN, cfgM, col, co, ci, weightBuffer0, biasBuffer0);
+            InputTileLoad(dram2, isPadding, inFmOffset, cfgN, cfgK, cfgS, cfgRow, cfgCol, row, col, ci, inputFmBuffer0);
+            if(ci+1+TN > cfgN) {
+                TileConv(isRelu, isFullConnect, cfgRow,  cfgN, cfgK, cfgS, ci, biasBuffer0, weightBuffer0, inputFmBuffer0, immBuffer2);
+                tpeState = TPE_START;
+            }
             else
                 tpeState = TPE_RUN;
             break;
 
         case TPE_RUN:
-            if(ci+TN+1 > cfgN)
-                tpeState = TPE_END;
-            break;
+            if(sel == 0) {
+                TileConv(isRelu, isFullConnect, cfgRow,  cfgN, cfgK, cfgS, ci2, biasBuffer1, weightBuffer1, inputFmBuffer1, immBuffer2);
+                WeightTileLoad(dram, weightOffset, biasOffset, isFullConnect, cfgCol, cfgK, cfgN, cfgM, col, co, ci, weightBuffer0, biasBuffer0);
+                InputTileLoad(dram2, isPadding, inFmOffset, cfgN, cfgK, cfgS, cfgRow, cfgCol, row, col, ci, inputFmBuffer0);
+            } else {
+                TileConv(isRelu, isFullConnect, cfgRow,  cfgN, cfgK, cfgS, ci2, biasBuffer0, weightBuffer0, inputFmBuffer0, immBuffer2);
+                WeightTileLoad(dram, weightOffset, biasOffset, isFullConnect, cfgCol, cfgK, cfgN, cfgM, col, co, ci, weightBuffer1, biasBuffer1);
+                InputTileLoad(dram2, isPadding, inFmOffset, cfgN, cfgK, cfgS, cfgRow, cfgCol, row, col, ci, inputFmBuffer1);
+            }
 
-        case TPE_END:
-            tpeState = TPE_START;
+            if(ci+1+TN > cfgN) {
+                if(sel == 0)
+                    TileConv(isRelu, isFullConnect, cfgRow,  cfgN, cfgK, cfgS, ci, biasBuffer0, weightBuffer0, inputFmBuffer0, immBuffer2);
+                else
+                    TileConv(isRelu, isFullConnect, cfgRow,  cfgN, cfgK, cfgS, ci, biasBuffer1, weightBuffer1, inputFmBuffer1, immBuffer2);
+                tpeState = TPE_START;
+            }
             break;
-
     }
     
 
@@ -327,12 +329,12 @@ void TileProcessEngineWrapper(DataType *dram, DataType *dram2, ParameterType wei
                         ParameterType biasOffset, ParameterType inFmOffset, bool isPadding,
                         bool isRelu, bool isFullConnect, ParameterType cfgRow, ParameterType cfgCol,
                         ParameterType cfgM, ParameterType cfgN, ParameterType cfgK, ParameterType cfgS,
-                        int row, int col, int co) {
+                        int row, int col, int co, DataType immBuffer2[TM][TR][TC]) {
 #pragma HLS inline off
-    for(int ci = 0; ci < cfgN+TN; ci += TN) {
+    for(int ci = 0; ci < cfgN; ci += TN) {
     	TileProcessEngine(dram, dram2, weightOffset, biasOffset, inFmOffset, isPadding,
                             isRelu, isFullConnect, cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS, row,
-                            col, co, ci);
+                            col, co, ci, immBuffer2);
     }
 }
 
@@ -345,22 +347,93 @@ void TileTop(DataType *dram, DataType *dram2, DataType *dram3,
                 ParameterType cfgS, ParameterType cfgPoolK, ParameterType cfgPoolS, 
                 int row, int col, int co) {
 #pragma HLS inline off
-//#pragma HLS dataflow
+static DataType immBuffer2[TM][TR][TC];
+#pragma HLS resource variable=immBuffer2 core=RAM_2P_BRAM  
+#pragma HLS array_partition variable=immBuffer2 dim=1 complete
+static DataType immPoolBuffer0[TM][TR][TC];
+#pragma HLS resource variable=immPoolBuffer0 core=RAM_2P_BRAM
+#pragma HLS array_partition variable=immPoolBuffer0 dim=1 complete
+static DataType immPoolBuffer1[TM][TR][TC];
+#pragma HLS resource variable=immPoolBuffer1 core=RAM_2P_BRAM
+#pragma HLS array_partition variable=immPoolBuffer1 dim=1 complete
+
+
+    static enum {TT_START = 0, TT_RUN = 1} ttState = TT_START;
+
+    static bool sel = 0;
+    if(row == 0 && col == 0 && co == 0)
+        sel = 0;
+    else 
+        sel = !sel;
+
+    static int row2=0, col2=0, co2=0;
+    bool last = (row+1+TR > cfgRow) && (col+1+TC > cfgCol) && (co+1+TM > cfgM);
+
+    switch(ttState) {
+        case TT_START:
+            TileProcessEngineWrapper(dram, dram2, weightOffset, biasOffset, inFmOffset, isPadding,
+                        isRelu, isFullConnect, cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS, row,
+                        col, co, immBuffer2);
+
+            TilePooling(cfgN, cfgK, cfgPoolK, cfgPoolS, immBuffer2, immPoolBuffer0);
+            if(last) {
+                TileWriteBackWrapper(dram3, outFmOffset, isPoolingMax, cfgRow, cfgCol, 
+                        cfgM, cfgPoolK, cfgPoolS, row, col, co, immPoolBuffer0);
+                ttState = TT_START;
+            } else
+                ttState = TT_RUN;
+            break;
+
+        case TT_RUN: 
+            if(sel == 0) {
+                TileWriteBackWrapper(dram3, outFmOffset, isPoolingMax, cfgRow, cfgCol, 
+                        cfgM, cfgPoolK, cfgPoolS, row2, col2, co2, immPoolBuffer1);
+                TileProcessEngineWrapper(dram, dram2, weightOffset, biasOffset, inFmOffset, isPadding,
+                            isRelu, isFullConnect, cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS, row,
+                            col, co, immBuffer2);
+                TilePooling(cfgN, cfgK, cfgPoolK, cfgPoolS, immBuffer2, immPoolBuffer0);
+            } else {
+                TileWriteBackWrapper(dram3, outFmOffset, isPoolingMax, cfgRow, cfgCol, 
+                        cfgM, cfgPoolK, cfgPoolS, row2, col2, co2, immPoolBuffer0);
+                TileProcessEngineWrapper(dram, dram2, weightOffset, biasOffset, inFmOffset, isPadding,
+                            isRelu, isFullConnect, cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS, row,
+                            col, co, immBuffer2);
+                TilePooling(cfgN, cfgK, cfgPoolK, cfgPoolS, immBuffer2, immPoolBuffer1);
+            }
+            if(last) {
+                if(sel == 0) 
+                    TileWriteBackWrapper(dram3, outFmOffset, isPoolingMax, cfgRow, cfgCol, 
+                        cfgM, cfgPoolK, cfgPoolS, row, col, co, immPoolBuffer0);
+                else 
+                    TileWriteBackWrapper(dram3, outFmOffset, isPoolingMax, cfgRow, cfgCol, 
+                        cfgM, cfgPoolK, cfgPoolS, row, col, co, immPoolBuffer1);
+                ttState = TT_START;
+            }   
+            break;
+    }
+
+    row2 = row;
+    col2 = col;
+    co2 = co;
+
+/*
     TileProcessEngineWrapper(dram, dram2, weightOffset, biasOffset, inFmOffset, isPadding,
                         isRelu, isFullConnect, cfgRow, cfgCol, cfgM, cfgN, cfgK, cfgS, row,
-                        col, co);
+                        col, co, immBuffer2);
 
-    TilePooling(cfgN, cfgK, cfgPoolK, cfgPoolS);
+    TilePooling(cfgN, cfgK, cfgPoolK, cfgPoolS, immBuffer2, immPoolBuffer);
 
     
     TileWriteBackWrapper(dram3, outFmOffset, isPoolingMax, cfgRow, cfgCol, 
-                    cfgM, cfgPoolK, cfgPoolS, row, col, co);
+                    cfgM, cfgPoolK, cfgPoolS, row, col, co, immPoolBuffer);
+*/
+
 }
 
-void LayerTop(DataType *dram, DataType *dram2, DataType *dram3, LayerCfgType cfgSet) {
-#pragma HLS interface m_axi port=dram offset=slave depth=436050 bundle=BUS_DATA1
-#pragma HLS interface m_axi port=dram2 offset=slave depth=436050 bundle=BUS_DATA2
-#pragma HLS interface m_axi port=dram3 offset=slave depth=436050 bundle=BUS_DATA3
+void LayerTop(DataType *dram, DataType *dram2, DataType *dram3, const LayerCfgType cfgSet) {
+#pragma HLS interface m_axi port=dram offset=slave depth=436054 bundle=BUS_DATA1
+#pragma HLS interface m_axi port=dram2 offset=slave depth=436054 bundle=BUS_DATA2
+#pragma HLS interface m_axi port=dram3 offset=slave depth=436054 bundle=BUS_DATA3
 #pragma HLS interface s_axilite port=return
 #pragma HLS interface s_axilite port=cfgSet
 
@@ -387,10 +460,10 @@ ParameterType cfgPoolS, cfgPoolK;
     cfgPoolK = cfgSet.cfgPoolK;
     cfgPoolS = cfgSet.cfgPoolS;
     
-    assert(cfgRow < 2048);
-    assert(cfgCol < 2048);
-    assert(cfgM < 2048);
-    assert(cfgN < 2048);
+    assert(cfgRow < 1024);
+    assert(cfgCol < 1024);
+    assert(cfgM < 1024);
+    assert(cfgN < 1024);
     assert(cfgK < K_MAX+1);
     assert(cfgS < S_MAX+1);
     assert(cfgPoolK < K_POOL_MAX+1);

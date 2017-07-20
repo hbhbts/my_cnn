@@ -1,8 +1,8 @@
 
-#define TM 32
-#define TN 16
-#define TR 28
-#define TC 28
+#define TM 50
+#define TN 7
+#define TR 24
+#define TC 24
 #define K_MAX 5
 #define S_MAX 1
 #define TR_IN (S_MAX*(TR-1)+K_MAX)
