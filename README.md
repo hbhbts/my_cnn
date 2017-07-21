@@ -12,4 +12,5 @@ lenet_iter_10000.caffemodel: trained weights from caffe
 
 plot.py: roofline model parameters explore
 
- ![solarized palette](https://github.com/hbhbts/my_cnn/raw/master/plot.png)
+ ![solarized palette](https://github.com/hbhbts/my_cnn/raw/master/plot.png) 
+ ![solarized palette](https://github.com/hbhbts/my_cnn/raw/master/block.png)
